@@ -1,6 +1,6 @@
 # N-Body Simulation: C++ Framework
 
-This folder holds the C++ implementation of the dissertation project *Comparative Reliability Performance of N-Body Simulation under Hamiltonian Framework Applying Barnes-Hut Trees*. It is the target of the transfer announced in the notebook prototype (`../notebook/main.ipynb`): every feature is first validated in Python and then ported here.
+This repository holds the C++ implementation of the dissertation project *Comparative Reliability Performance of N-Body Simulation under Hamiltonian Framework Applying Barnes-Hut Trees*. It is the target of the transfer announced in the notebook prototype: every feature is first validated in Python and then ported here.
 
 This document describes every module of the port and shows, with short examples, how each of its functions is used. Section 4 gives a complete program that touches every module; Sections 5 to 9 then treat the modules one at a time, from the vector type up to the Barnes-Hut octree, and Section 10 shows how they combine into a time integrator. Equation numbers, such as Eq. (19), refer to the numbering of the notebook.
 
