@@ -7,7 +7,8 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "helpers/minimal.h++"
+#include "procgen/virialise.h++"
+#include "helpers/verificators.h++"
 
 namespace procgen {
 
@@ -23,8 +24,8 @@ namespace procgen {
     ///          exactly. Applied after the centre-of-mass correction, P = 0 is preserved.
     ///          Used after init_plummer and by the random-sphere generator.
     void virialise(Object& bodies, double G, double e, double q_vir) {
-        const double t = minimal::t_abs(bodies);
-        const double v = minimal::v_abs(bodies, G, e);
+        const double t = verify::t_abs(bodies);
+        const double v = verify::v_abs(bodies, G, e);
 
         if (t <= 0.0) {
             throw std::invalid_argument("virialise: kinetic energy is zero, velocities cannot be rescaled");

@@ -22,6 +22,8 @@ add_executable(
         src/helpers/verificators.cpp
         include/helpers/verificators.h++
         include/helpers/verificators.h++
+        src/physics/barnes_hut.cpp
+        include/physics/barnes_hut.h++
 )
 
 # Lets sources include headers as "helpers/minimal.h++" or "procgen/plummer.h++"

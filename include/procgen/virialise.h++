@@ -6,6 +6,7 @@
 #define MAIN_VIRIALISE_H
 
 #include "helpers/object.h++"
+#include "helpers/verificators.h++"
 
 namespace procgen {
 
