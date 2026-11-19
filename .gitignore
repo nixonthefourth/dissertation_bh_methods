@@ -17,6 +17,8 @@ Makefile
 build.ninja
 .ninja_deps
 .ninja_log
+.xml
+.iml
 
 # ── Compiled objects & binaries ────────────────────────────
 *.o
@@ -36,7 +38,7 @@ build.ninja
 *.gch
 *.pch
 
-# ── JetBrains / CLion (keep shared project files, drop personal ones) ──
+# ── JetBrains / CLion ──
 .idea/workspace.xml
 .idea/tasks.xml
 .idea/usage.statistics.xml
@@ -68,7 +70,7 @@ build.ninja
 core
 core.*
 
-# ── Simulation output (uncomment if you don't want results tracked) ──
+# ── Simulation output ──
 # output/
 # results/
 # *.csv
