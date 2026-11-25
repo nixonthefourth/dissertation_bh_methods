@@ -17,7 +17,7 @@ namespace integrators {
     void vv_step(Object& bodies, double G, double e, double h, const Force& force) {
         soa::axpy(bodies.velocity(), 0.5 * h, bodies.acceleration());       // kick:  v += h/2 a_n
         soa::axpy(bodies.displacement(), h, bodies.velocity());             // drift: r += h v_{n+1/2}
-        force(G, bodies, e);                                                // a_{n+1} into ax, ay, az
+        force(G, bodies, e);    // a_{n+1} into ax, ay, az
         soa::axpy(bodies.velocity(), 0.5 * h, bodies.acceleration());       // kick:  v += h/2 a_{n+1}
     }
 
