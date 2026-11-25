@@ -5,10 +5,12 @@
 #include "procgen/plummer.h++"
 
 #include <cmath>
+#include <complex>
 #include <numbers>
 #include <stdexcept>
 
 #include "helpers/minimal.h++"
+#include "procgen/virialise.h++"
 
 namespace procgen {
     /// @brief Default Plummer scale length
@@ -83,6 +85,68 @@ namespace procgen {
 
         // Move to the centre-of-mass frame, so that the cluster does not drift and P_0 = 0 (up to rounding)
         minimal::to_com_frame(bodies, M);
+
+        return bodies;
+    }
+
+    /// @brief Uniform random sphere with unequal masses
+    /// @param N Number of bodies
+    /// @param G The constant of gravitational attraction
+    /// @param M Total mass of the system
+    /// @param R Radius of the sphere that bodies are scattered in
+    /// @param e Softening factor
+    /// @param delta Relative speed of the masses, m_i uniform in [1 - delta, 1 + delta] before normalisation
+    /// @param q_vir Target virial ratio Q = T / |V|
+    /// @details Primary difference comparing to the `init_plummer` function is that this particular model
+    ///          draws randomised masses of bodies, where those are unequal. Follows the same idea of the
+    ///          original Plummer's model, but instead of a mass ratio uses a uniform random distribution.
+    /// @return Returns the system of bodies
+    Object init_plummer_sphere(std::size_t N, double G, double M, double R, double e, double delta, double q_vir) {
+        // Edge Case Handling
+        if (N == 0) {
+            throw std::invalid_argument("init_plummer_sphere: N must be positive");
+        }
+
+        // Initialise Bodies
+        Object bodies(N);
+
+        // Draw Masses
+        std::vector<double> raw_m;
+        std::vector<double> masses;
+        double raw_m_tot;
+
+        // Draw raw values first
+        for (std::size_t k = 0; k < N; ++k) {
+            double mass_raw = 1.0 + delta * (2.0 * minimal::random_uniform() - 1.0);
+            raw_m_tot += mass_raw;
+            raw_m.push_back(mass_raw);
+        }
+
+        // Normalise values so that sum_i m_i = M exactly
+        for (int m = 0; masses.size() < N; ++m) {
+            double mass_norm = M * m / raw_m_tot;
+            masses.push_back(mass_norm);
+        }
+
+        for (int m = 0; m < masses.size(); ++m) {
+            // Radius: the mass inside radius r of a uniform sphere grows as r^3, so the cumulative
+            // distribution is (r / R)^3 = X, and r = R * X^(1/3) with X uniform in [0, 1]
+            double r = R * std::pow(minimal::random_uniform(), 1.0/3.0);
+
+            // Speed: any distribution would do, because the speeds are rescaled below. Only the
+            // directions and the RELATIVE speeds of the bodies remain random.
+            double speed = minimal::random_uniform();
+
+            // Append the list of bodies
+            bodies.add(m, r * minimal::random_direction(), speed * minimal::random_direction());
+        }
+
+        // Move to the centre-of-mass frame, so that the system does not drift and P_0 = 0 (up to rounding)
+        minimal::to_com_frame(bodies, M);
+
+        // Rescale the velocities to the chosen virial ratio. The rescaling is applied after the
+        // centre-of-mass correction, so P = 0 is preserved (it is multiplied by the same factor).
+        virialise(bodies, G, e, q_vir);
 
         return bodies;
     }
