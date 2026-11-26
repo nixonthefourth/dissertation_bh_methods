@@ -2,9 +2,7 @@
 
 This repository holds the C++ implementation of the dissertation project *Comparative Reliability Performance of N-Body Simulation under Hamiltonian Framework Applying Barnes-Hut Trees*. It is the target of the transfer announced in the notebook prototype: every feature is first validated in Python and then ported here.
 
-This document describes every module of the port and shows, with short examples, how each of its functions is used. Section 4 gives a complete program that touches every module; Sections 5 to 9 then treat the modules one at a time, from the vector type up to the Barnes-Hut octree, and Section 10 shows how they combine into a time integrator. Equation numbers, such as Eq. (19), refer to the numbering of the notebook.
-
-All examples in this document were compiled with GCC 11.4 (`-std=c++2b -O2`) and run; the values quoted in the comments are those that were printed.
+This document describes every module of the port and serves as a guide to its use, with a short example for each function. Section 4 gives a complete program that touches every module; Sections 5 to 11 then treat the modules one at a time, from the vector type up to the Barnes-Hut octree, and Section 12 describes the six time integrators that advance a system with them. Equation numbers, such as Eq. (19), refer to the numbering of the notebook.
 
 ---
 
@@ -21,11 +19,9 @@ All examples in this document were compiled with GCC 11.4 (`-std=c++2b -O2`) and
 9. [Conserved quantities: `verify`](#9-conserved-quantities-verify)
 10. [Force evaluation: direct summation](#10-force-evaluation-direct-summation)
 11. [Force evaluation: the Barnes-Hut octree](#11-force-evaluation-the-barnes-hut-octree)
-12. [Combining the modules: a time integrator](#12-combining-the-modules-a-time-integrator)
+12. [Time integrators](#12-time-integrators)
 13. [Correspondence with the notebook](#13-correspondence-with-the-notebook)
-14. [Validation of the Barnes-Hut port](#14-validation-of-the-barnes-hut-port)
-15. [Accuracy and cost of the Barnes-Hut method](#15-accuracy-and-cost-of-the-barnes-hut-method)
-16. [Known limitations](#16-known-limitations)
+14. [Known limitations](#14-known-limitations)
 
 ---
 
@@ -35,15 +31,28 @@ All examples in this document were compiled with GCC 11.4 (`-std=c++2b -O2`) and
 |---|---|---|---|
 | Vector and SoA helpers | `Body`, NumPy arrays | `Vec3`, `soa`, `Object` | ported |
 | Shared helpers | helper cell | `minimal` | ported |
-| Initial conditions | `init_plummer`, `virialise` | `procgen` | ported |
-| | `init_random_sphere` | | not yet ported |
+| Initial conditions | `init_plummer`, `init_random_sphere`, `virialise` | `procgen` | ported |
 | Conserved quantities | conservation cell | `verify` | ported |
 | Direct summation | `acc` | `physics::acc` | ported |
 | Barnes-Hut octree | `acc_bh` and the `_bh` functions | `physics::Nodes`, `physics::acc_bh` | ported |
-| Integrators | six `run_*` functions | | not yet ported |
+| Integrators | six `run_*` functions | `integrators` | ported |
+| Integrator registry and hot-swap driver | `integrator_registry`, `simulate_hot_swap` | | not yet ported |
 | JSON experiment pipeline | loader, logger, plotter, runtime | | not yet ported |
 
-`main.cpp` is still a placeholder; the modules above are compiled into the executable but are not yet driven by it. Section 12 shows how an integrator can be written on top of the existing modules in the meantime.
+`main.cpp` is still a placeholder; the modules above are compiled into the executable but are not yet driven by it.
+
+### 1.1 Additions in this revision
+
+- **`procgen::init_random_sphere`**: the uniform random sphere with unequal masses of Experiment 3 (Section 8).
+- **`integrators::leapfrog_step`, `leapfrog_run`**: second-order Leapfrog in kick-drift-kick form (L2).
+- **`integrators::euler_step`, `euler_run`**: first-order Forward Euler (FE1).
+- **`integrators::rk2_step`, `rk2_run`**: second-order Runge-Kutta, explicit midpoint method (RK2).
+- **`integrators::rk4_step`, `rk4_run`**: classical fourth-order Runge-Kutta (RK4).
+- **`integrators::RKWorkspace`**: reusable scratch storage of the Runge-Kutta steps.
+- **`integrators::fr4_step`, `fr4_run`** and the coefficients **`integrators::forest_ruth`**: fourth-order Forest-Ruth (FR4).
+- **`integrators::Force`**: moved into its own header, `integrators/force.h++`, which every integrator includes.
+
+Together with the existing `vv_step`, `vv4_step` and `vv4_run` (VV4), all six integrators of the notebook are now available. They are described in Section 12.
 
 ---
 
@@ -54,16 +63,18 @@ main/
 ├── CMakeLists.txt
 ├── main.cpp
 ├── include/
-│   ├── helpers/    Vec3.h++  soa.h++  object.h++  minimal.h++  verificators.h++
-│   ├── procgen/    plummer.h++  virialise.h++
-│   └── physics/    accelerations.h++  barnes_hut.h++
+│   ├── helpers/        Vec3.h++  soa.h++  object.h++  minimal.h++  verificators.h++
+│   ├── procgen/        plummer.h++  virialise.h++
+│   ├── physics/        accelerations.h++  barnes_hut.h++
+│   └── integrators/    force.h++  leapfrog.h++  verlet4.h++  forest_ruth.h++  euler.h++  runge_kutta.h++
 └── src/
-    ├── helpers/    minimal.cpp  verificators.cpp
-    ├── procgen/    plummer.cpp  virialise.cpp
-    └── physics/    accelerations.cpp  barnes_hut.cpp
+    ├── helpers/        minimal.cpp  verificators.cpp
+    ├── procgen/        plummer.cpp  virialise.cpp
+    ├── physics/        accelerations.cpp  barnes_hut.cpp
+    └── integrators/    leapfrog.cpp  verlet4.cpp  forest_ruth.cpp  euler.cpp  runge_kutta.cpp
 ```
 
-Headers use the extension `.h++` and are included relative to `include/` (for example `#include "physics/barnes_hut.h++"`). `Vec3.h++`, `soa.h++` and `object.h++` are header-only; the remaining modules have a source file in `src/`.
+Headers use the extension `.h++` and are included relative to `include/` (for example `#include "physics/barnes_hut.h++"`). `Vec3.h++`, `soa.h++`, `object.h++` and `force.h++` are header-only; the remaining modules have a source file in `src/`.
 
 | Header | Namespace | Contents |
 |---|---|---|
@@ -72,10 +83,16 @@ Headers use the extension `.h++` and are included relative to `include/` (for ex
 | `helpers/object.h++` | global | `Object`, the system of bodies |
 | `helpers/minimal.h++` | `minimal` | random numbers, copying, centre-of-mass frame, velocity set-up |
 | `helpers/verificators.h++` | `verify` | energy, momentum and angular momentum, and their relative errors |
-| `procgen/plummer.h++` | `procgen` | Plummer sphere sampler |
+| `procgen/plummer.h++` | `procgen` | Plummer sphere sampler and uniform random sphere |
 | `procgen/virialise.h++` | `procgen` | rescaling to a given virial ratio |
 | `physics/accelerations.h++` | `physics` | direct summation |
 | `physics/barnes_hut.h++` | `physics` | Barnes-Hut octree and its diagnostics |
+| `integrators/force.h++` | `integrators` | `Force`, the call form of a force routine |
+| `integrators/leapfrog.h++` | `integrators` | Leapfrog, 2nd order (L2) |
+| `integrators/verlet4.h++` | `integrators` | Velocity Verlet and its Yoshida composition, 4th order (VV4) |
+| `integrators/forest_ruth.h++` | `integrators` | Forest-Ruth, 4th order (FR4) |
+| `integrators/euler.h++` | `integrators` | Forward Euler, 1st order (FE1) |
+| `integrators/runge_kutta.h++` | `integrators` | Runge-Kutta, 2nd and 4th order (RK2, RK4) |
 
 ---
 
@@ -88,9 +105,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-The build type matters for timing: the figures in Section 15 were measured with optimisation (`-O2`), so a Debug build is not representative of them.
+The build type matters whenever run times are measured: a Debug build is considerably slower than an optimised (Release) one.
 
-To compile a program of one's own against the framework without CMake, it suffices to add `include/` to the include path and to compile the six source files with it:
+To compile a program of one's own against the framework without CMake, it suffices to add `include/` to the include path and to compile all source files in `src/` with it:
 
 ```
 g++ -std=c++23 -O2 -Iinclude my_program.cpp src/*/*.cpp -o my_program
@@ -102,18 +119,20 @@ g++ -std=c++23 -O2 -Iinclude my_program.cpp src/*/*.cpp -o my_program
 
 ## 4. Quick start
 
-The following program generates a Plummer sphere in virial equilibrium, records its conserved quantities, and compares the Barnes-Hut forces with direct summation.
+The following program generates a Plummer sphere in virial equilibrium, compares the Barnes-Hut forces with direct summation, and integrates the cluster with the fourth-order Velocity Verlet scheme while measuring how well the conserved quantities are preserved.
 
 ```cpp
 #include <algorithm>
 #include <iostream>
 
+#include "helpers/minimal.h++"
 #include "helpers/object.h++"
 #include "helpers/verificators.h++"
 #include "procgen/plummer.h++"
 #include "procgen/virialise.h++"
 #include "physics/accelerations.h++"
 #include "physics/barnes_hut.h++"
+#include "integrators/verlet4.h++"
 
 int main() {
     const double G = 1.0, M = 1.0, e = 0.05;      // Hénon units, softening 0.05
@@ -124,28 +143,28 @@ int main() {
     Object bodies = procgen::init_plummer(N, G, M, a);
     procgen::virialise(bodies, G, e);              // Q = T / |V| = 0.5
 
-    // 2. Conserved quantities at t = 0
-    const verify::ConservationState s0 = verify::conservation_state(bodies, G, e);
-    std::cout << "H_0 = " << s0.H << ", P_0 = " << s0.P << ", L_0 = " << s0.L << '\n';
-
-    // 3. Forces by direct summation and by Barnes-Hut, compared body by body
+    // 2. Forces by direct summation and by Barnes-Hut, compared body by body
     soa::Vec3Array a_direct(N), a_tree(N);
     physics::acc(G, bodies, e, a_direct.view());
     physics::acc_bh(G, bodies, e, 0.5, a_tree.view());
 
     const std::vector<double> err = physics::force_error(a_tree.view(), a_direct.view());
     std::cout << "largest relative force error: " << *std::ranges::max_element(err) << '\n';
+
+    // 3. Integration: 100 steps of VV4 with the tree forces, on a copy of the initial conditions
+    Object run = minimal::copy_bodies(bodies);
+    const verify::ConservationState s0 = verify::conservation_state(run, G, e);
+    const double l_ref = verify::l_scale(run);
+
+    integrators::vv4_run(run, G, e, 1e-3, 100, physics::acc_bh_theta(0.5));
+
+    const verify::ConservationState sn = verify::conservation_state(run, G, e);
+    std::cout << "H_rel = " << verify::h_rel(s0.H, sn.H)
+              << ", L_rel = " << verify::l_rel(s0.L, sn.L, l_ref) << '\n';
 }
 ```
 
-Output (with the default seed):
-
-```
-H_0 = -0.264435, P_0 = (-3.26272e-17, -1.17049e-17, -1.17082e-18), L_0 = (-0.0136341, -0.0179452, -0.00113097)
-largest relative force error: 0.0466041
-```
-
-The total momentum is zero up to rounding because `init_plummer` returns the system in its centre-of-mass frame.
+The total momentum of the initial conditions is zero up to rounding, because `init_plummer` returns the system in its centre-of-mass frame. Replacing `vv4_run` by any other `*_run` function of Section 12, or `physics::acc_bh_theta(0.5)` by direct summation, changes the integrator or the force routine without touching the rest of the program.
 
 ---
 
@@ -224,7 +243,7 @@ soa::Vec3Span w(x, y, z);
 w.set(0, {0, 0, 0});                  // x[0] = y[0] = z[0] = 0
 ```
 
-A `Vec3Array` must be sized before it is written to, either through the constructor `Vec3Array(n)` or through `resize(n)`. It is the intended type for scratch storage that is allocated once and reused at every step, such as the old accelerations of the Velocity Verlet step (Section 12).
+A `Vec3Array` must be sized before it is written to, either through the constructor `Vec3Array(n)` or through `resize(n)`. It is the intended type for scratch storage that is allocated once and reused at every step, such as the trial states of the Runge-Kutta steps (`integrators::RKWorkspace`, Section 12.4).
 
 ### 6.2 Bulk operations and reductions
 
@@ -332,7 +351,7 @@ All randomness in the framework is drawn from a single generator, `minimal::rng(
 #include "helpers/minimal.h++"
 
 minimal::set_seed(minimal::default_seed);     // restart the sequence (or any other seed)
-const double u = minimal::random_uniform();   // 0.315187 for the default seed
+const double u = minimal::random_uniform();   // in [0, 1)
 const Vec3 n = minimal::random_direction();   // norm(n) == 1
 
 // Any other distribution can draw from the same generator
@@ -392,6 +411,7 @@ Declared in `include/procgen/plummer.h++` and `include/procgen/virialise.h++`.
 |---|---|
 | `plummer_scale_length(G, M)` | $a = 3\pi G M^2/16$, which gives the total energy $E=-1/4$ (Hénon units); about 0.589 for $G=M=1$ |
 | `init_plummer(N, G, M, a, r_cut = 10)` | $N$ bodies of mass $M/N$ sampled from the Plummer sphere (Aarseth, Hénon & Wielen, 1974; Eqs. (21) to (27)), returned in the centre-of-mass frame. Bodies beyond `r_cut` $\cdot\,a$ are redrawn. Throws `std::invalid_argument` if `N` is zero or `a`, `r_cut` are not positive. |
+| `init_random_sphere(N, G, M, R, e, delta, q_vir)` | $N$ bodies with unequal masses, distributed uniformly inside a sphere of radius $R$ (the initial conditions of Experiment 3). The raw masses are uniform in $[1-\delta, 1+\delta]$ and normalised so that $\sum_i m_i = M$ exactly; radii follow $r = R\,X^{1/3}$ (uniform in volume), and the directions of displacement and velocity are isotropic. The system is moved to the centre-of-mass frame and virialised to `q_vir` with the softening `e`. Throws `std::invalid_argument` if `N` is zero, `M` or `R` is not positive, or `delta` lies outside $[0, 1)$. |
 | `virialise(bodies, G, e, q_vir = 0.5)` | rescales all velocities so that $T/\lvert V\rvert$ equals `q_vir` exactly; $0.5$ is virial equilibrium, smaller values give a collapsing system. Throws if the kinetic energy is zero. |
 
 ```cpp
@@ -408,7 +428,23 @@ procgen::virialise(cluster, G, e);          // T / |V| = 0.5: equilibrium
 procgen::virialise(compact, G, e, 0.25);    // T / |V| = 0.25: cold, collapses
 ```
 
-Sampling only meets the virial ratio on average; `virialise` removes the sampling noise. It should be given the same softening as the force routine, since $V$ depends on it. Because it scales the velocities uniformly, it preserves the zero total momentum established by `init_plummer`.
+The uniform random sphere is generated in one call, already virialised:
+
+```cpp
+const double R = 1.2;                       // R = 6/5 gives E = -1/4 in virial equilibrium
+const double delta = 0.5;                   // raw masses uniform in [0.5, 1.5] before normalisation
+
+minimal::set_seed(minimal::default_seed);   // the same system on every run
+Object sphere = procgen::init_random_sphere(20, G, M, R, e, delta, 0.5);
+
+sphere.total_mass();                        // M, up to rounding
+verify::p_abs(sphere);                      // zero up to rounding: centre-of-mass frame
+verify::t_abs(sphere) / std::abs(verify::v_abs(sphere, G, e));    // 0.5, exactly the requested q_vir
+```
+
+`delta = 0` gives equal masses. The softening `e` enters only through the potential energy of the virial rescaling, and should therefore be the one used later by the force routine. After the shift to the centre-of-mass frame a few bodies may lie slightly outside the radius $R$.
+
+Sampling only meets the virial ratio on average; `virialise` removes the sampling noise. It should be given the same softening as the force routine, since $V$ depends on it. Because it scales the velocities uniformly, it preserves the zero total momentum established by `init_plummer` and `init_random_sphere`.
 
 ---
 
@@ -483,7 +519,7 @@ soa::Vec3Array out(b.size());
 physics::acc(1.0, b, 0.0, out.view());     // into a separate buffer; b is not modified
 ```
 
-Since `acc` is overloaded, `physics::acc` cannot be passed by name where a callable is expected; a lambda selects the overload (see Section 12):
+Since `acc` is overloaded, `physics::acc` cannot be passed by name where a callable is expected; a lambda selects the overload (see Section 12.2):
 
 ```cpp
 auto direct = [](double G, Object& b, double e) { physics::acc(G, b, e); };
@@ -539,7 +575,7 @@ Three design decisions follow from this layout.
 - **Parents precede children.** A child is always appended after its parent, so every child has a larger index than its parent. The bottom-up pass that computes the mass moments, and the depth computation of `stats()`, therefore reduce to a plain sweep over the arrays, with no recursion.
 - **Leaf lists.** A leaf holds one body, except at `max_depth`, where the bodies of a leaf are chained through `next_body`. The tree walk always sums a leaf body by body and exactly, so sharing a leaf costs no accuracy; only the cost of that leaf grows with the number of its bodies.
 
-The memory cost is 80 bytes per node (ten `double`-sized entries) and 8 bytes per body. For a Plummer sphere of 4000 bodies the tree has 15 529 nodes, about 3.9 nodes per body.
+The memory cost is 80 bytes per node (ten `double`-sized entries) and 8 bytes per body.
 
 ### 11.3 Interface
 
@@ -549,7 +585,7 @@ The memory cost is 80 bytes per node (ten `double`-sized entries) and 8 bytes pe
 |---|---|
 | `acc_bh(G, const Object& bodies, e, theta, soa::Vec3Span out)` | Writes the Barnes-Hut accelerations into `out` (size $N$). The counterpart of `acc`; builds a fresh tree. Throws `std::invalid_argument` if the size of `out` is wrong or `theta` is negative. |
 | `acc_bh(G, Object& bodies, e, theta = 0.5)` | Writes the accelerations into the system's `ax`, `ay`, `az`. |
-| `acc_bh_theta(theta)` | Returns a callable `void(double G, Object& bodies, double e)` with `theta` fixed, for code that expects the three-argument form of a force routine (as the integrators will). |
+| `acc_bh_theta(theta)` | Returns a callable `void(double G, Object& bodies, double e)` with `theta` fixed, for code that expects the three-argument form of a force routine (as the integrators of Section 12 do). |
 
 **Diagnostics**
 
@@ -642,58 +678,182 @@ for (const double theta : {0.25, 0.5, 1.0}) {
 
 ---
 
-## 12. Combining the modules: a time integrator
+## 12. Time integrators
 
-The integrators of the notebook are not yet ported, but the modules above already contain everything an integrator needs. The following sketch implements one Velocity Verlet step,
+Declared in the headers of `include/integrators/`, all in the namespace `integrators`. These are the C++ counterparts of the six `run_*` functions of the notebook.
 
-$$r_{n+1}=r_n+h\,v_n+\tfrac{h^2}{2}\,a_n,\qquad v_{n+1}=v_n+\tfrac{h}{2}\,(a_n+a_{n+1}),$$
+### 12.1 Overview
 
-for any force routine with the call form `force(G, bodies, e)`. It is an illustration of the interfaces, not part of the framework.
+| Key | Scheme | Functions | Header | Order | Symplectic | Force evaluations per step |
+|---|---|---|---|---|---|---|
+| L2 | Leapfrog, kick-drift-kick | `leapfrog_step`, `leapfrog_run` | `leapfrog.h++` | 2 | yes | 1 |
+| VV4 | Velocity Verlet, Yoshida composition | `vv4_step`, `vv4_run` (and the 2nd-order `vv_step`) | `verlet4.h++` | 4 | yes | 3 |
+| FR4 | Forest-Ruth (Forest & Ruth, 1990) | `fr4_step`, `fr4_run` | `forest_ruth.h++` | 4 | yes | 3 |
+| FE1 | Forward (explicit) Euler | `euler_step`, `euler_run` | `euler.h++` | 1 | no | 1 |
+| RK2 | Runge-Kutta, explicit midpoint (Runge, 1895) | `rk2_step`, `rk2_run` | `runge_kutta.h++` | 2 | no | 2 |
+| RK4 | classical Runge-Kutta (Kutta, 1901) | `rk4_step`, `rk4_run` | `runge_kutta.h++` | 4 | no | 4 |
+
+The keys are those of the notebook's `integrator_registry`. The force evaluations per step include the evaluation at the new displacements, which the next step reuses as its starting acceleration, so no force is ever evaluated twice.
+
+Every integrator follows the same contract:
+
+- **`*_run(bodies, G, e, h, steps, force)`** first computes $a(r_0)$ with `force`, so that the stored accelerations need not be valid on entry (for example straight after `Object::add` or `minimal::copy_bodies`), and then makes `steps` steps of size `h`. The system is advanced in place. A run of $n$ steps costs $k\,n+1$ force evaluations, with $k$ from the table above. It throws `std::invalid_argument` if `force` is empty.
+- **`*_step(bodies, G, e, h, force)`** makes a single step. On entry `ax`, `ay`, `az` must hold $a(r_n)$; on exit they hold $a(r_{n+1})$, so that consecutive steps can be chained without further force evaluations. `h` may be negative, which integrates backwards in time.
+- On exit of either function, the displacements and velocities refer to the **same instant**: the half-step velocity of the Leapfrog and the sub-steps of the Yoshida, Forest-Ruth and Runge-Kutta schemes are all completed inside the step. The state left behind by one integrator is therefore an ordinary phase-space point, which any other integrator can continue from (the hot-swap of Experiment 3).
+- Because every `*_run` recomputes $a(r)$ on entry, which depends on the displacements only, splitting one run into several consecutive calls gives the same result as a single call.
+
+### 12.2 Force routines
+
+An integrator receives its force routine as an `integrators::Force` (declared in `integrators/force.h++`),
 
 ```cpp
-#include "helpers/object.h++"
-#include "helpers/minimal.h++"
-#include "helpers/verificators.h++"
-#include "procgen/plummer.h++"
-#include "procgen/virialise.h++"
+using Force = std::function<void(double G, Object& bodies, double e)>;
+```
+
+which must write the accelerations of the current displacements into the system's own `ax`, `ay`, `az`. Both force routines of the framework fit this form:
+
+```cpp
 #include "physics/accelerations.h++"
 #include "physics/barnes_hut.h++"
+#include "integrators/force.h++"
 
-/// One Velocity Verlet step; a_old is scratch storage of size N, allocated once by the caller
-template <class Force>
-void vv_step(Object& b, double G, double e, double h, Force&& force, soa::Vec3Array& a_old) {
-    soa::copy(b.acceleration(), a_old.view());                 // a_n
-    soa::axpy(b.displacement(), h, b.velocity());              // r += h v
-    soa::axpy(b.displacement(), 0.5 * h * h, a_old.view());    //    + h^2 / 2 a_n
-    force(G, b, e);                                            // a_{n+1} into b.ax, ay, az
-    soa::axpy(b.velocity(), 0.5 * h, a_old.view());            // v += h / 2 a_n
-    soa::axpy(b.velocity(), 0.5 * h, b.acceleration());        //    + h / 2 a_{n+1}
-}
+// Direct summation: a lambda selects the overload acc(G, Object&, e)
+const integrators::Force direct = [](double G, Object& b, double e) { physics::acc(G, b, e); };
 
-/// Runs a copy of the system and returns the relative energy error at the end
-template <class Force>
-double run(Object b, double G, double e, double h, std::size_t steps, Force&& force) {
-    soa::Vec3Array a_old(b.size());
-    force(G, b, e);                                            // a_0
-    const auto s0 = verify::conservation_state(b, G, e);
-    for (std::size_t n = 0; n < steps; ++n) {
-        vv_step(b, G, e, h, force, a_old);
-    }
-    return verify::h_rel(s0.H, verify::conservation_state(b, G, e).H);
-}
+// Barnes-Hut with a fixed opening angle
+const integrators::Force tree = physics::acc_bh_theta(0.5);
+```
 
-int main() {
-    const double G = 1.0, M = 1.0, e = 0.05, h = 1e-3;
-    Object start = procgen::init_plummer(500, G, M, procgen::plummer_scale_length(G, M));
-    procgen::virialise(start, G, e);
+Any other callable with this signature may be passed as well. The notebook's `CountedForce`, which counts the force evaluations of a run, becomes a capturing lambda:
 
-    auto direct = [](double G, Object& b, double e) { physics::acc(G, b, e); };
-    run(minimal::copy_bodies(start), G, e, h, 1000, direct);                       // 1.5e-7
-    run(minimal::copy_bodies(start), G, e, h, 1000, physics::acc_bh_theta(1.0));   // 4.8e-4
+```cpp
+std::size_t calls = 0;
+const integrators::Force counted = [&calls](double G, Object& b, double e) {
+    ++calls;
+    physics::acc(G, b, e);
+};
+
+integrators::rk4_run(bodies, G, e, h, 100, counted);   // calls == 4 * 100 + 1
+```
+
+### 12.3 Running an integrator
+
+Each `*_run` function has the same arguments, so the six integrators are used identically:
+
+```cpp
+#include "helpers/minimal.h++"
+#include "procgen/plummer.h++"
+#include "integrators/leapfrog.h++"
+#include "integrators/verlet4.h++"
+#include "integrators/forest_ruth.h++"
+#include "integrators/euler.h++"
+#include "integrators/runge_kutta.h++"
+
+const double G = 1.0, M = 1.0, e = 0.05;
+Object start = procgen::init_random_sphere(20, G, M, 1.2, e, 0.5, 0.5);
+
+const double h = 1e-3;
+const std::size_t steps = 1000;
+
+Object l2  = minimal::copy_bodies(start);   integrators::leapfrog_run(l2,  G, e, h, steps, direct);
+Object vv4 = minimal::copy_bodies(start);   integrators::vv4_run     (vv4, G, e, h, steps, direct);
+Object fr4 = minimal::copy_bodies(start);   integrators::fr4_run     (fr4, G, e, h, steps, direct);
+Object fe1 = minimal::copy_bodies(start);   integrators::euler_run   (fe1, G, e, h, steps, direct);
+Object rk2 = minimal::copy_bodies(start);   integrators::rk2_run     (rk2, G, e, h, steps, direct);
+Object rk4 = minimal::copy_bodies(start);   integrators::rk4_run     (rk4, G, e, h, steps, tree);
+```
+
+`copy_bodies` gives every run its own copy of the same initial conditions.
+
+**Recording a run in frames.** The notebook's experiments call an integrator for a fixed number of steps per stored frame and evaluate the conserved quantities in between. The same loop in C++:
+
+```cpp
+#include "helpers/verificators.h++"
+
+Object b = minimal::copy_bodies(start);
+const verify::ConservationState s0 = verify::conservation_state(b, G, e);
+const double p_ref = verify::p_scale(b), l_ref = verify::l_scale(b);
+
+const std::size_t n_frames = 100, steps_per_frame = 10;
+std::vector<double> h_err{0.0}, p_err{0.0}, l_err{0.0};
+
+for (std::size_t f = 0; f < n_frames; ++f) {
+    integrators::fr4_run(b, G, e, h, steps_per_frame, direct);   // continues from the current state
+
+    const verify::ConservationState sn = verify::conservation_state(b, G, e);
+    h_err.push_back(verify::h_rel(s0.H, sn.H));
+    p_err.push_back(verify::p_rel(s0.P, sn.P, p_ref));
+    l_err.push_back(verify::l_rel(s0.L, sn.L, l_ref));
 }
 ```
 
-The relative energy errors after 1000 steps are given in the comments. Because both force routines share one call form, the comparison between direct summation and the tree is a matter of passing a different callable, and `copy_bodies` guarantees that both runs start from the same state. The larger error of the tree code reflects the force errors of Section 15 and the lack of momentum conservation noted in Section 16.
+Each call of `fr4_run` costs one extra force evaluation for $a(r)$ on entry. If this matters, the step function can be chained directly instead, after one initial force evaluation:
+
+```cpp
+direct(G, b, e);                                   // a(r_0)
+for (std::size_t n = 0; n < steps; ++n) {
+    integrators::fr4_step(b, G, e, h, direct);     // a(r_{n+1}) is left in b for the next step
+}
+```
+
+**Hot-swapping integrators.** Since every integrator leaves a consistent state behind, a schedule of integrators can advance one system in consecutive segments, as in Experiment 3:
+
+```cpp
+#include <functional>
+#include <map>
+#include <string>
+
+using Run = std::function<void(Object&, double, double, double, std::size_t, const integrators::Force&)>;
+
+const std::map<std::string, Run> registry = {
+    {"L2",  integrators::leapfrog_run}, {"FR4", integrators::fr4_run}, {"VV4", integrators::vv4_run},
+    {"FE1", integrators::euler_run},    {"RK2", integrators::rk2_run}, {"RK4", integrators::rk4_run},
+};
+
+Object b = minimal::copy_bodies(start);
+for (const std::string key : {"L2", "RK2", "FR4", "RK4", "VV4", "FE1"}) {
+    registry.at(key)(b, G, e, h, 500, tree);       // each integrator continues from the state of the last one
+}
+```
+
+### 12.4 Scratch storage of the Runge-Kutta steps: `RKWorkspace`
+
+A Runge-Kutta stage requires the accelerations of a *trial* configuration, $r_n + c\,h\,k_r$, which is not the state the bodies are in. The notebook's `acc_stage` writes the trial displacements into the bodies temporarily and restores them afterwards. The C++ port writes them into a separate system instead, `RKWorkspace::stage`, which holds the masses of the real system; the force routine is called on that system, so the real one is never modified before the step is complete, and any `Force`, direct or Barnes-Hut, works without change.
+
+| Member | Description |
+|---|---|
+| `stage` | an `Object` with the masses of the system and the trial displacements; the force writes the stage slopes $k_v$ into its accelerations (its velocities are unused) |
+| `k_r` | displacement slope of the latest stage |
+| `sum_r`, `sum_v` | weighted sums of the slopes (RK4 only) |
+| `prepare(bodies)` | sizes all buffers for `bodies` and copies its masses; called by the step functions themselves |
+
+`rk2_run` and `rk4_run` allocate one workspace and reuse it for every step. When steps are chained by hand, a workspace should likewise be created once and passed to every step; the overloads `rk2_step(bodies, G, e, h, force)` and `rk4_step(bodies, G, e, h, force)` without a workspace allocate a new one on every call and are meant for single steps only.
+
+```cpp
+integrators::RKWorkspace ws;                       // allocated once
+direct(G, b, e);                                   // a(r_0)
+for (std::size_t n = 0; n < steps; ++n) {
+    integrators::rk4_step(b, G, e, h, direct, ws); // reuses the buffers of ws
+}
+```
+
+A workspace may be passed in any state and may be reused for a system of a different size, since `prepare` resizes it as required.
+
+### 12.5 Coefficients and relations between the schemes
+
+The coefficients of the two fourth-order symplectic schemes are available as compile-time constants:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `yoshida::w1`, `yoshida::w0` | $1/(2-2^{1/3})$, $-2^{1/3}/(2-2^{1/3})$ | sub-step sizes of VV4, as fractions of `h` |
+| `forest_ruth::chi` | $(2^{1/3}+2^{-1/3}-1)/6$ | real root of $48\chi^3+24\chi^2-1=0$ |
+| `forest_ruth::c` | $(\chi+\tfrac12,\,-\chi,\,-\chi,\,\chi+\tfrac12)$ | kick coefficients of FR4 |
+| `forest_ruth::d` | $(2\chi+1,\,-4\chi-1,\,2\chi+1,\,0)$ | drift coefficients of FR4 |
+
+Two of the six integrators coincide algebraically with others, which should be kept in mind when their results are compared:
+
+- **L2 and the Velocity Verlet step.** The kick-drift-kick Leapfrog and `vv_step` are the same scheme, and `leapfrog_step` and `vv_step` produce identical results.
+- **FR4 and VV4.** The drift coefficients of FR4 equal the Yoshida sub-steps, $d = (w_1, w_0, w_1, 0)$, and its kick coefficients equal the merged half-kicks of three consecutive Velocity Verlet steps, $c = (w_1/2,\,(w_1+w_0)/2,\,(w_0+w_1)/2,\,w_1/2)$. FR4 is therefore the same method as VV4; the two differ only in the rounding of the merged kicks, and their results agree to rounding error.
 
 ---
 
@@ -713,12 +873,29 @@ The relative energy errors after 1000 steps are given in the comments. Because b
 | `vel_init`, `get_perpendicular`, `vel_direction` | `minimal::` functions of the same names | |
 | `init_plummer` | `procgen::init_plummer` | random numbers drawn in the same order |
 | `virialise` | `procgen::virialise` | |
-| `init_random_sphere` | | not yet ported |
+| `init_random_sphere` | `procgen::init_random_sphere` | random numbers drawn in the same order; throws on invalid arguments |
 | `t_abs` | `verify::t_abs` | $m\lvert v\rvert^2/2$ instead of $\lvert p\rvert^2/(2m)$; no division |
 | `v_abs`, `h_abs`, `h_rel` | `verify::` functions of the same names | |
 | `p_abs`, `p_scale`, `l_abs`, `l_scale`, `vec_rel` | `verify::` functions of the same names | plus the aliases `p_rel`, `l_rel` |
 | `conservation_state` | `verify::conservation_state` | returns a struct `{H, P, L}` |
 | `acc` | `physics::acc` | Newton's third law halves the work |
+
+**Integrators**
+
+| Notebook | C++ | Remark |
+|---|---|---|
+| `acc_func` argument of `run_*` | `integrators::Force` | any callable `void(double G, Object& bodies, double e)` |
+| `CountedForce` | a capturing lambda (Section 12.2) | |
+| `run_l_2` | `integrators::leapfrog_run` | per step: `leapfrog_step` |
+| `run_vv_4`, `yoshida_x1`, `yoshida_x0` | `integrators::vv4_run`, `yoshida::w1`, `yoshida::w0` | per step: `vv4_step`, built from `vv_step` |
+| `run_fr_4`, `fr_chi`, `fr_c`, `fr_d` | `integrators::fr4_run`, `forest_ruth::chi`, `forest_ruth::c`, `forest_ruth::d` | per step: `fr4_step` |
+| `run_fe_1` | `integrators::euler_run` | per step: `euler_step` |
+| `run_rk_2` | `integrators::rk2_run` | per step: `rk2_step` |
+| `run_rk_4` | `integrators::rk4_run` | per step: `rk4_step` |
+| `acc_stage` | `integrators::RKWorkspace::stage` | trial displacements in a separate system instead of swapping them into the bodies |
+| `integrator_registry` | a `std::map` of the `*_run` functions (Section 12.3) | not part of the framework yet |
+
+L2, FR4, FE1, RK2 and RK4 perform the same updates as the notebook, in the same order: every displacement and velocity update of the notebook is a `soa::axpy` here, and the Runge-Kutta slopes are summed with the weights 1, 2, 2, 1 in the order of the notebook. VV4 uses the kick-drift-kick form of the Velocity Verlet step, which is algebraically identical to the notebook's form $r_{n+1}=r_n+h\,v_n+\tfrac{h^2}{2}a_n$, $v_{n+1}=v_n+\tfrac{h}{2}(a_n+a_{n+1})$ but needs no copy of $a_n$. Since `physics::acc` sums the pair forces in a different order, results agree with the notebook to rounding error rather than bit for bit.
 
 **Barnes-Hut**
 
@@ -747,59 +924,19 @@ The following differences in the Barnes-Hut port are intentional and do not chan
 
 ---
 
-## 14. Validation of the Barnes-Hut port
-
-The port was checked against the notebook itself by running the notebook's `build_tree_bh`, `acc_bh` and `tree_stats_bh` and the C++ code on the same input: 300 bodies with unequal masses, distributed as a Plummer sphere, which contains one pair at exactly the same position and one pair at a separation of $10^{-9}$, so that the depth limit and the leaf lists are exercised.
-
-| Check | Result |
-|---|---|
-| C++ against notebook, $\theta=0$, largest relative difference in $\hat{a}_i$ | $2.0\times10^{-15}$ |
-| C++ against notebook, $\theta=0.5$ | $1.5\times10^{-15}$ |
-| C++ against notebook, $\theta=1$ | $1.5\times10^{-15}$ |
-| Tree statistics (nodes, non-empty leaves, depth) | 1657, 298, 32 in both |
-| $\theta=0$ against `physics::acc`, largest relative difference | $3.1\times10^{-15}$ |
-| Total mass and centre of mass at the root against direct sums | agree to rounding |
-
-The differences are at the level of floating-point rounding, as expected from a different order of additions. These checks were run with temporary test programs; no automated test suite exists in the repository yet, so a unit test built from the table above is a natural addition.
-
----
-
-## 15. Accuracy and cost of the Barnes-Hut method
-
-Measured on a Plummer sphere in Hénon units ($G=M=1$, $a=3\pi/16$, softening $0.05$), generated with `procgen::init_plummer`.
-
-**Force error** ($N=4000$; tree of 15 529 nodes, depth 12):
-
-| $\theta$ | median | 95th percentile | maximum |
-|---|---|---|---|
-| 0 | $1.8\times10^{-15}$ | $3.8\times10^{-15}$ | $1.3\times10^{-14}$ |
-| 0.25 | $3.8\times10^{-4}$ | $9.1\times10^{-4}$ | $9.7\times10^{-3}$ |
-| 0.5 | $2.1\times10^{-3}$ | $6.4\times10^{-3}$ | $6.5\times10^{-2}$ |
-| 0.75 | $6.3\times10^{-3}$ | $1.8\times10^{-2}$ | $2.5\times10^{-1}$ |
-| 1.0 | $1.5\times10^{-2}$ | $4.0\times10^{-2}$ | $2.5\times10^{-1}$ |
-
-The error grows by a factor of 5 to 7 per doubling of $\theta$, which is somewhat steeper than the $\theta^2$ scaling of a single accepted cell (Eq. (20)), because the errors of many accepted cells accumulate. The maxima are attained by bodies near the centre of the cluster, where the contributions of the surrounding bodies nearly cancel, so that the small net force has a large relative error.
-
-**Cost** of one force evaluation, including the construction of the tree (single thread, `-O2`, GCC 11.4 on a 4-core Linux virtual machine; one run per entry):
-
-| $N$ | direct [s] | Barnes-Hut, $\theta=0.5$ [s] | Barnes-Hut, $\theta=1$ [s] | direct / BH(0.5) |
-|---|---|---|---|---|
-| 1 000 | 0.0010 | 0.0044 | 0.0014 | 0.2 |
-| 4 000 | 0.0160 | 0.0341 | 0.0074 | 0.5 |
-| 16 000 | 0.2475 | 0.1750 | 0.0335 | 1.4 |
-| 64 000 | 4.0024 | 0.8282 | 0.1575 | 4.8 |
-
-Direct summation grows by a factor of about 16 per quadrupling of $N$, whereas the tree code grows by a factor of 7.7, 5.1 and 4.7 in the three successive quadruplings of the full measurement (1 000 to 64 000), approaching the factor of about 4 of $\mathcal{O}(N\log N)$. The crossover at $\theta=0.5$ lies near $N\approx10^4$: below it the direct sum is faster, because the pair loop of `physics::acc` is very light and uses Newton's third law to halve its work. The absolute times depend on the machine and the build type, so only the scaling and the crossover should be taken from this table.
-
----
-
-## 16. Known limitations
+## 14. Known limitations
 
 **General**
 
 - **`verify::v_abs` is $\mathcal{O}(N^2)$.** Monitoring the energy of a large system is as expensive as one direct force evaluation, also when the forces come from the tree, so it should be done at intervals rather than at every step.
 - **One shared random generator.** Reproducibility depends on the order of all draws in a program; `minimal::set_seed` should be called before each generator whose output is to be compared between programs. The C++ generator (`std::mt19937_64`) is not the one used by Python's `random`, so the same seed gives different, though statistically equivalent, initial conditions in the notebook and here.
 - **Views are not owning.** A `soa::Vec3Span` taken from an `Object` or a `Vec3Array` dangles after `add`, `resize` or `reserve` on that container.
+
+**Integrators**
+
+- **Fixed step size only.** All six integrators advance with a constant `h`; there is no adaptive or individual time-stepping, so the closest encounters of a collisional system limit the step size of the whole run.
+- **No registry or hot-swap driver yet.** The notebook's `integrator_registry` and `simulate_hot_swap` have no counterpart in the framework; Section 12.3 shows how both are assembled from the `*_run` functions.
+- **The Runge-Kutta overloads without a workspace allocate on every call.** Loops over `rk2_step` or `rk4_step` should pass one `RKWorkspace` (Section 12.4).
 
 **Barnes-Hut**
 
@@ -815,6 +952,10 @@ Direct summation grows by a factor of about 16 per quadrupling of $N$, whereas t
 ## References
 
 - Aarseth, S. J., Hénon, M. and Wielen, R. (1974) A comparison of numerical methods for the study of star cluster dynamics. *Astronomy and Astrophysics*, 37, 183–187.
+- Forest, E. and Ruth, R. D. (1990) Fourth-order symplectic integration. *Physica D*, 43(1), 105–117.
+- Kutta, W. (1901) Beitrag zur näherungsweisen Integration totaler Differentialgleichungen. *Zeitschrift für Mathematik und Physik*, 46, 435–453.
 - Barnes, J. and Hut, P. (1986) A hierarchical $\mathcal{O}(N\log N)$ force-calculation algorithm. *Nature*, 324, 446–449.
 - Plummer, H. C. (1911) On the problem of distribution in globular star clusters. *Monthly Notices of the Royal Astronomical Society*, 71, 460–470.
+- Runge, C. (1895) Ueber die numerische Auflösung von Differentialgleichungen. *Mathematische Annalen*, 46, 167–178.
 - Salmon, J. K. and Warren, M. S. (1994) Skeletons from the treecode closet. *Journal of Computational Physics*, 111(1), 136–155.
+- Yoshida, H. (1990) Construction of higher order symplectic integrators. *Physics Letters A*, 150(5–7), 262–268.

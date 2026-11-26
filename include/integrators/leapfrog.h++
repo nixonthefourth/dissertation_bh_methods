@@ -4,19 +4,13 @@
 
 #ifndef MAIN_LEAPFROG_H
 #define MAIN_LEAPFROG_H
-#include <functional>
+
+#include <cstddef>
 
 #include "helpers/object.h++"
+#include "integrators/force.h++"
 
 namespace integrators {
-    /// @brief Force routine with the call form force(G, bodies, e)
-    /// @details It must write the accelerations of the current displacements into the system's own
-    ///          ax, ay, az. Both direct summation and the Barnes-Hut tree fit this form:
-    ///              [](double G, Object& b, double e) { physics::acc(G, b, e); }    (a lambda, since acc is overloaded)
-    ///              physics::acc_bh_theta(0.5)
-    ///          The force is evaluated a few times per step only, so the cost of the std::function call
-    ///          is negligible next to the O(N^2) or O(N log N) force evaluation itself.
-    using Force = std::function<void(double G, Object& bodies, double e)>;
 
     /// @brief One second-order Leapfrog step in kick-drift-kick form
     /// @param bodies The system of stellar bodies; on entry ax, ay, az must hold a(r_n)
@@ -24,15 +18,22 @@ namespace integrators {
     /// @param e Softening factor
     /// @param h Step size (may be negative)
     /// @param force Force routine, see Force
+    /// @details v_{n+1/2} = v_n + h/2 a_n,   r_{n+1} = r_n + h v_{n+1/2},   a_{n+1} = a(r_{n+1}),
+    ///          v_{n+1} = v_{n+1/2} + h/2 a_{n+1}.
+    ///          One force evaluation per step; on exit ax, ay, az hold a(r_{n+1}), ready for the next step.
+    ///          The kick-drift-kick Leapfrog and the Velocity Verlet step are the same scheme, so this
+    ///          gives exactly the result of vv_step (it is kept separately as the L2 entry of the notebook).
     void leapfrog_step(Object& bodies, double G, double e, double h, const Force& force);
 
-    /// @brief Advances a system by a number of second-order Yoshida steps
+    /// @brief Advances a system by a number of second-order Leapfrog steps
     /// @param bodies The system of stellar bodies (advanced in place)
     /// @param G Constant of gravitational attraction
     /// @param e Softening factor
     /// @param h Step size
     /// @param steps Number of steps
     /// @param force Force routine, see Force
+    /// @details Computes a(r_0) first, so that the stored accelerations need not be valid on entry.
+    ///          Total cost: steps + 1 force evaluations.
     void leapfrog_run(Object& bodies, double G, double e, double h, std::size_t steps, const Force& force);
 }
 

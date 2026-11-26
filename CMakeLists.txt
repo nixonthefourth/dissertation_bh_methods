@@ -28,6 +28,13 @@ add_executable(
         src/integrators/verlet4.cpp
         src/integrators/leapfrog.cpp
         include/integrators/leapfrog.h++
+        include/integrators/force.h++
+        src/integrators/euler.cpp
+        include/integrators/euler.h++
+        src/integrators/runge_kutta.cpp
+        include/integrators/runge_kutta.h++
+        src/integrators/forest_ruth.cpp
+        include/integrators/forest_ruth.h++
 )
 
 # Lets sources include headers as "helpers/minimal.h++" or "procgen/plummer.h++"

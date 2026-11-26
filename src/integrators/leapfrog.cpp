@@ -2,7 +2,9 @@
 // Created by Mykyta Khomiakov on 25/11/2026.
 //
 
-#include "./integrators/leapfrog.h++"
+#include "integrators/leapfrog.h++"
+
+#include <stdexcept>
 
 namespace integrators {
 
@@ -13,13 +15,13 @@ namespace integrators {
     /// @param h Step size (may be negative)
     /// @param force Force routine, see Force
     void leapfrog_step(Object& bodies, double G, double e, double h, const Force& force) {
-        soa::axpy(bodies.velocity(), 0.5 * h, bodies.acceleration());   // Kick
-        soa::axpy(bodies.displacement(), h, bodies.acceleration());   // Drift
-        force(G, bodies, e);     // a_{n+1} into ax, ay, az
-        soa::axpy(bodies.velocity(), 0.5 * h, bodies.acceleration());   // Kick
+        soa::axpy(bodies.velocity(), 0.5 * h, bodies.acceleration());       // kick:  v += h/2 a_n
+        soa::axpy(bodies.displacement(), h, bodies.velocity());             // drift: r += h v_{n+1/2}
+        force(G, bodies, e);    // a_{n+1} into ax, ay, az
+        soa::axpy(bodies.velocity(), 0.5 * h, bodies.acceleration());       // kick:  v += h/2 a_{n+1}
     }
 
-    /// @brief Advances a system by a number of second-order Yoshida steps
+    /// @brief Advances a system by a number of second-order Leapfrog steps
     /// @param bodies The system of stellar bodies (advanced in place)
     /// @param G Constant of gravitational attraction
     /// @param e Softening factor

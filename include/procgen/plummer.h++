@@ -36,19 +36,24 @@ namespace procgen {
     /// @return Returns the system of bodies
     Object init_plummer(std::size_t N, double G, double M, double a, double r_cut = 10.0);
 
-    /// @brief Uniform random sphere with unequal masses
+    /// @brief Uniform random sphere with unequal masses (the notebook's init_random_sphere)
     /// @param N Number of bodies
-    /// @param G The constant of gravitational attraction
+    /// @param G Constant of gravitational attraction
     /// @param M Total mass of the system
-    /// @param R Radius of the sphere that bodies are scattered in
-    /// @param e Softening factor
-    /// @param delta Relative speed of the masses, m_i uniform in [1 - delta, 1 + delta] before normalisation
+    /// @param R Radius of the sphere that the bodies are scattered in
+    /// @param e Softening factor (needed for the potential energy of the virial rescaling)
+    /// @param delta Relative spread of the masses, m_i uniform in [1 - delta, 1 + delta] before
+    ///        normalisation (0 <= delta < 1, so that every mass is positive)
     /// @param q_vir Target virial ratio Q = T / |V|
-    /// @details Primary difference comparing to the `init_plummer` function is that this particular model
-    ///          draws randomised masses of bodies, where those are unequal. Follows the same idea of the
-    ///          original Plummer's model, but instead of a mass ratio uses a uniform random distribution.
+    /// @details Unlike init_plummer, the bodies have unequal masses and are distributed uniformly inside
+    ///          a sphere of radius R rather than following the Plummer profile. The raw masses are drawn
+    ///          first and normalised so that sum_i m_i = M exactly. Each body then receives a radius
+    ///          r = R X^(1/3) (uniform in volume), a random speed in [0, 1) and isotropic directions for
+    ///          its displacement and velocity. The system is moved to the centre-of-mass frame and its
+    ///          velocities are rescaled to the virial ratio q_vir. The random numbers are drawn in the
+    ///          same order as in the notebook.
     /// @return Returns the system of bodies
-    Object init_plummer_sphere(std::size_t N, double G, double M, double R, double e, double delta, double q_vir);
+    Object init_random_sphere(std::size_t N, double G, double M, double R, double e, double delta, double q_vir);
 }
 
 #endif //MAIN_PLUMMER_H

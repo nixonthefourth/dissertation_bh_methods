@@ -6,22 +6,12 @@
 #define MAIN_VERLET4_H
 
 #include <cstddef>
-#include <functional>
 
 #include "helpers/object.h++"
 #include "helpers/soa.h++"
+#include "integrators/force.h++"
 
-/// @brief Numerical Integration Schemes (symplectic and non-symplectic)
 namespace integrators {
-
-    /// @brief Force routine with the call form force(G, bodies, e)
-    /// @details It must write the accelerations of the current displacements into the system's own
-    ///          ax, ay, az. Both direct summation and the Barnes-Hut tree fit this form:
-    ///              [](double G, Object& b, double e) { physics::acc(G, b, e); }    (a lambda, since acc is overloaded)
-    ///              physics::acc_bh_theta(0.5)
-    ///          The force is evaluated a few times per step only, so the cost of the std::function call
-    ///          is negligible next to the O(N^2) or O(N log N) force evaluation itself.
-    using Force = std::function<void(double G, Object& bodies, double e)>;
 
     /// @brief Coefficients of Yoshida's fourth-order triple-jump composition (Yoshida 1990)
     /// @details A step of size h is made of three Velocity Verlet sub-steps of sizes w1 h, w0 h, w1 h with
